@@ -2,8 +2,6 @@ othello_qwen
 data
 .env
 
-__pycache__/
-*.py[cod]
-*$py.class
+**/__pycache__/
 
 *.log
