@@ -5,3 +5,13 @@ data
 **/__pycache__/
 
 *.log
+
+.vscode
+results
+Qwen3-0.6B-SFT
+Qwen3-4B-Instruct-2507-SFT
+train_output
+
+t.py
+othello_data_reader.py
+play_othello.py
