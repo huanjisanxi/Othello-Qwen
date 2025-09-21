@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "/data/data_public/zjy/Othello-Qwen/othello_qwen/bin/python",
+  "python.languageServer": "Pylance",
+  "python.analysis.autoImportCompletions": true, 
+  "python.analysis.completeFunctionParens": true 
+}

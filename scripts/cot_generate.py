@@ -22,7 +22,7 @@ def process_game_data(
         game_data_list = json.load(f)
     
     if max_games:
-        game_data_list = game_data_list[:max_games]
+        game_data_list = game_data_list[200:max_games]
     
     total_games = len(game_data_list)
     cot_generator = CoTGenerator()  

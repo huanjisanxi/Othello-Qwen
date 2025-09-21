@@ -6,12 +6,12 @@ data
 
 *.log
 
-.vscode
-results
-Qwen3-0.6B-SFT
-Qwen3-4B-Instruct-2507-SFT
-train_output
 
-t.py
+results/
+Qwen3-0.6B-SFT/
+Qwen3-4B-Instruct-2507-SFT/
+trainer_output/
+
 othello_data_reader.py
 play_othello.py
+t.py

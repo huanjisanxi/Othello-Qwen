@@ -1,0 +1,26 @@
+model_params:
+  # model_id: "Qwen/Qwen3-4B-Instruct-2507"
+  # model_id: "Qwen/Qwen3-0.6B"
+  model_id: "Qwen/Qwen2.5-3B-Instruct"
+  # model_id: "Qwen/Qwen2.5-1.5B-Instruct"
+  use_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16" 
+
+device: 'cuda:0'
+
+data_params:
+  dataset_path: "data/othello_with_cot.json" 
+
+lora_params:
+  r: 16
+  lora_alpha: 32
+  target_modules: "all-linear" 
+  lora_dropout: 0.05
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+training_params:
+  output_dir: "./results/${model_params.model_id}"
+  max_length: 8192
+  batch_size: 8
