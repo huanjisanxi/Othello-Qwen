@@ -1,3 +1,5 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import random
 import sys
@@ -7,7 +9,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.data_process.cot_loader import load_cot_data
 
-model_path = "results/Qwen/Qwen2.5-3B-othello-sft/final_checkpoint"
+model_path = "/data/data_public/zjy/Othello-Qwen/trainer_output/checkpoint-5000"
 
 data_path = "/data/data_public/zjy/Othello-Qwen/data/othello_with_cot.json"
 

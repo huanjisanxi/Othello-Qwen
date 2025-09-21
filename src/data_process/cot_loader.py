@@ -1,5 +1,29 @@
 import json
 
+
+def convert_board_to_positions(rows):
+    columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    
+    black_pieces = []
+    white_pieces = []
+    
+    for row_idx, row in enumerate(rows):
+        cells = row.split()
+        
+        for col_idx, cell in enumerate(cells):
+            position = f"{columns[col_idx]}{row_idx + 1}"
+            
+            if cell == 'B':
+                black_pieces.append(position)
+            elif cell == 'W':
+                white_pieces.append(position)
+    
+    return {
+        "black_pieces": black_pieces,
+        "white_pieces": white_pieces
+    }
+
+
 def format_othello_record_for_training(record: dict, mode='train') -> str:
     """
     Converts a structured Othello data record into a single string
@@ -14,15 +38,19 @@ def format_othello_record_for_training(record: dict, mode='train') -> str:
     # 1. Extract necessary information from the input record
     board_state = record['board_state']
     rows = board_state.split('\n')
-    numbered_rows = [f"row {i+1} {row}" for i, row in enumerate(rows)]
-    board_state = '\n'.join(numbered_rows)
+    # numbered_rows = [f"row {i+1} {row}" for i, row in enumerate(rows)]
+    # board_state = '\n'.join(numbered_rows)
+    board_state = convert_board_to_positions(rows)
 
     player_id = record['player']
     chosen_move = record['position']
     cot_data = record['cot']
-    del cot_data['analysis']['opponent_response_prediction']
-    del cot_data['analysis']['alternatives_considered']
-    del cot_data['analysis']['move_justification']['capture_details']
+    try:
+        del cot_data['analysis']['opponent_response_prediction']
+        del cot_data['analysis']['alternatives_considered']
+        del cot_data['analysis']['move_justification']['capture_details']
+    except:
+        pass
     prev_action = record['prev_action']
 
     # Convert player ID to a human-readable string

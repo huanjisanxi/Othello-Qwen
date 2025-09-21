@@ -11,6 +11,7 @@ device: 'cuda:0'
 
 data_params:
   dataset_path: "data/othello_with_cot.json" 
+  dataset_path_negative: "data/othello_with_cot_negative_only.json"
 
 lora_params:
   r: 16
@@ -21,6 +22,6 @@ lora_params:
   task_type: "CAUSAL_LM"
 
 training_params:
-  output_dir: "./results/${model_params.model_id}"
+  output_dir: "./results/Qwen2.5-3B-othello-sft"
   max_length: 8192
   batch_size: 8

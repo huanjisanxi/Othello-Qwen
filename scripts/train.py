@@ -39,8 +39,9 @@ def train_model(config: dict):
     
     print(f"Loading data from: {config['data_params']['dataset_path']}")
     training_strings = load_cot_data(config['data_params']['dataset_path'])
+    negative_strings = load_cot_data(config['data_params']['dataset_path_negative'])
 
-    dataset = Dataset.from_dict({"text": training_strings})
+    dataset = Dataset.from_dict({"text": training_strings+negative_strings})
 
     peft_config = LoraConfig(** config['lora_params'])
 
@@ -56,9 +57,6 @@ def train_model(config: dict):
         args=training_args,
         peft_config=peft_config
     )
-    for name, param in model.named_parameters():
-        if "lora" in name:
-            param.requires_grad = True
     
     print("Starting training...")
     trainer.train()

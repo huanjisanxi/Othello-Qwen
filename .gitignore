@@ -15,3 +15,4 @@ trainer_output/
 othello_data_reader.py
 play_othello.py
 t.py
+thirdparty/

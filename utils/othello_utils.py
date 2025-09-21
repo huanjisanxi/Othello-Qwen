@@ -67,7 +67,6 @@ def check_captures_from_string(board_str: str, pos: str, player: int) -> Dict[st
 def check_captures(board: List[List[int]], pos: str, player: int) -> Dict[str, Any]:
     r, c = position_to_coord(pos)
     
-    # 检查位置是否有效且为空
     if not inside(r, c) or board[r][c] != 0:
         return {
             "position": pos,
@@ -174,6 +173,29 @@ def _get_english_direction(direction: tuple) -> str:
         (1, 1): "southeast diagonal"
     }
     return direction_map.get(direction, f"direction {direction}")
+
+
+def convert_board_to_positions(rows):
+    columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    
+    black_pieces = []
+    white_pieces = []
+    
+    for row_idx, row in enumerate(rows):
+        cells = row.split()
+        
+        for col_idx, cell in enumerate(cells):
+            position = f"{columns[col_idx]}{row_idx + 1}"
+            
+            if cell == 'B':
+                black_pieces.append(position)
+            elif cell == 'W':
+                white_pieces.append(position)
+    
+    return {
+        "black_pieces": black_pieces,
+        "white_pieces": white_pieces
+    }
 
 
 if __name__ == '__main__':
