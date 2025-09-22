@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.data_process.cot_loader import load_cot_data
+from src.data_process.cot_loader import load_cot_data, convert_to_dataset_dict
 
 def train_model(config: dict):
     model_id = config['model_params']['model_id']
@@ -40,8 +40,9 @@ def train_model(config: dict):
     print(f"Loading data from: {config['data_params']['dataset_path']}")
     training_strings = load_cot_data(config['data_params']['dataset_path'])
     negative_strings = load_cot_data(config['data_params']['dataset_path_negative'])
+    all_strings = training_strings + negative_strings
 
-    dataset = Dataset.from_dict({"text": training_strings+negative_strings})
+    dataset = Dataset.from_dict(convert_to_dataset_dict(all_strings))
 
     peft_config = LoraConfig(** config['lora_params'])
 

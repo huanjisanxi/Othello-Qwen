@@ -99,7 +99,7 @@ def sample_steps_no_flank(record):
 
         step['position'] = pos
         step['cot'] = {
-            "move_analysis": {
+            "analysis": {
                 "chosen_move": pos,
                 "is_legal": False,
                 "error_type": "No Opponent Pieces Flipped",

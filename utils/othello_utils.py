@@ -129,12 +129,10 @@ def print_board(board: List[List[int]]) -> None:
 def convert_capture_to_english_cot(capture_data: Dict) -> Dict[str, str]:
 
     player_name = "Black" if capture_data["player"] == 1 else "White"
-    player_symbol = "B" if capture_data["player"] == 1 else "W"
     opponent_name = "White" if capture_data["player"] == 1 else "Black"
-    opponent_symbol = "W" if capture_data["player"] == 1 else "B"
     
     reasoning: List[str] = []
-    reasoning.append(f"Analyzing the move: {player_name} ({player_symbol}) at {capture_data['position']}.")
+    reasoning.append(f"Analyzing the move: {player_name} at {capture_data['position']}.")
     
     if capture_data["valid_move"]:
         reasoning.append(f"This is a valid move because it can capture {opponent_name} pieces through flanking.")
@@ -145,13 +143,13 @@ def convert_capture_to_english_cot(capture_data: Dict) -> Dict[str, str]:
             
             reasoning.append(
                 f"Situation {i}: Along the {direction}, the new {player_symbol} at {capture_data['position']} "
-                f"flanks with an existing {player_symbol} at {situation['friendly_piece']}, "
-                f"capturing {opponent_symbol} pieces at {captured} (total {situation['count']})."
+                f"flanks with an existing {player_name} at {situation['friendly_piece']}, "
+                f"capturing {opponent_name} pieces at {captured} (total {situation['count']})."
             )
         
         total_captured = sum(s["count"] for s in capture_data["capture_situations"])
         reasoning.append(
-            f"Overall, this move is legal and will capture {total_captured} {opponent_symbol} pieces, "
+            f"Overall, this move is legal and will capture {total_captured} {opponent_name} pieces, "
         )
     else:
         reasoning.append(

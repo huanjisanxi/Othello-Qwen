@@ -44,38 +44,47 @@ def format_othello_record_for_training(record: dict, mode='train') -> str:
 
     player_id = record['player']
     chosen_move = record['position']
-    cot_data = record['cot']
-    try:
-        del cot_data['analysis']['opponent_response_prediction']
-        del cot_data['analysis']['alternatives_considered']
-        del cot_data['analysis']['move_justification']['capture_details']
-    except:
-        pass
+    cot_data = {"analysis":{}}
+    if "is_legal" not in record['cot']["analysis"]:
+        cot_data["analysis"]["reasoning"] = {}
+        cot_data["analysis"]["reasoning"]["board_assessment"] = record['cot']["analysis"]["board_assessment"]
+        cot_data["analysis"]["reasoning"]["move_justification"] = record['cot']["analysis"]["move_justification"]
+        cot_data["analysis"]["chosen_move"] = chosen_move
+        cot_data["analysis"]['is_legal'] = True
+    else:
+        cot_data["analysis"]["reasoning"] = {}
+        cot_data["analysis"]["reasoning"]['error_type'] = record['cot']["analysis"]['error_type']
+        cot_data["analysis"]["reasoning"]["description"] = record['cot']["analysis"]['reasoning']
+        cot_data["analysis"]["chosen_move"] = chosen_move
+        cot_data["analysis"]['is_legal'] = False
     prev_action = record['prev_action']
 
     # Convert player ID to a human-readable string
     player_str = "Black (B)" if player_id == 1 else "White (W)"
+    opponent = "Black (B)" if player_id == 2 else "White (W)" 
 
     # 2. Define the prompt components based on the ChatML format
     
     # The system prompt sets the model's persona and overall goal.
-    system_prompt = "You are an Othello grandmaster. Your task is to analyze a given board state and a specific move, then provide a structured thought process in JSON format that explains the strategic rationale behind that move."
+    system_prompt = "You are an Othello grandmaster. Your task is to analyze a given board state and a specific move, then provide a structured thought process in JSON format that explains the strategic rationale behind that move.Key rules: A move must be made in an empty space. A move must capture opponent's pieces through flanking between two of your own to flip them (in any direction: horizontal, vertical, or diagonal)."
 
     # The user prompt provides the specific context for the current turn.
     if mode == 'train':
         user_prompt = (
             f"prev action:{prev_action}\n"
             f"Player to move: {player_str}\n"
+            f"opponent: {opponent}\n"
             f"Chosen Move: {chosen_move.upper()}\n\n"
             f"Board State:\n"
             f"{board_state}\n\n"
-            f"Please provide a detailed analysis justifying why the chosen move is a good one."
+            f"Please provide a detailed analysis justifying why the chosen move is a good one, or explain why the move is invalid and why it cannot be made."
         )
 
     elif mode == 'eval':
         user_prompt = (
             f"prev action:{prev_action}\n"
             f"Player to move: {player_str}\n"
+            f"opponent: {opponent}\n"
             f"Board State:\n"
             f"{board_state}\n\n"
             f"Please provide a detailed analysis justifying why the chosen move is a good one."
@@ -119,6 +128,43 @@ def load_cot_data(file_path, mode='train'):
             prev_action = prev_action[-5:]
 
     return cot_data
+
+def split_othello_analysis(input_str):
+    assistant_tag = "<|assistant|>"
+    assistant_start_idx = input_str.find(assistant_tag)
+    
+    if assistant_start_idx == -1:
+        raise ValueError("<|assistant|> not found")
+    
+    prompt_part = input_str[:assistant_start_idx].strip()
+    analysis_part = input_str[assistant_start_idx + len(assistant_tag):].strip()
+    
+    return prompt_part, analysis_part
+
+
+def merge_system_user(prompt_part):
+    return prompt_part.strip()
+
+
+def convert_to_dataset_dict(str_list):
+    dataset_dict = {
+        "prompt": [],
+        "completion": []
+    }
+    
+    for s in str_list:
+        prompt_part, analysis_part = split_othello_analysis(s)
+        
+        merged_content = merge_system_user(prompt_part)
+        
+        prompt_entry = [{"role": "user", "content": merged_content}]
+        dataset_dict["prompt"].append(prompt_entry)
+        
+        completion_entry = [{"role": "assistant", "content": analysis_part}]
+        dataset_dict["completion"].append(completion_entry)
+    
+    return dataset_dict
+
         
 if __name__ == '__main__':
     load_cot_data('/data/data_public/zjy/Othello-Qwen/data/othello_with_cot.json')
