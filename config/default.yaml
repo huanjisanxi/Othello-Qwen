@@ -1,8 +1,5 @@
 model_params:
   model_id: "Qwen/Qwen3-4B-Instruct-2507"
-  # model_id: "Qwen/Qwen3-0.6B"
-  # model_id: "Qwen/Qwen2.5-3B-Instruct"
-  # model_id: "Qwen/Qwen2.5-1.5B-Instruct"
   use_4bit: true
   bnb_4bit_quant_type: "nf4"
   bnb_4bit_compute_dtype: "bfloat16" 
@@ -10,8 +7,7 @@ model_params:
 device: 'cuda:0'
 
 data_params:
-  dataset_path: "data/othello_with_cot.json" 
-  dataset_path_negative: "data/othello_with_cot_negative_only.json"
+  dataset_path: "data/training_data_tasks_1_2.jsonl" 
 
 lora_params:
   r: 16
@@ -23,5 +19,6 @@ lora_params:
 
 training_params:
   output_dir: "./results/Qwen/Qwen3-4B-Instruct-2507-othello-sft"
-  max_length: 8192
-  batch_size: 8
+  max_length: 2048
+  batch_size: 4
+  # resume_from_checkpoint: "./trainer_output/checkpoint-3000"

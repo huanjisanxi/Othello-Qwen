@@ -4,12 +4,13 @@ os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 import yaml
 import torch
-from datasets import Dataset
+from datasets import Dataset, load_dataset
 from peft import LoraConfig
 from transformers import (
     AutoModelForCausalLM,
     BitsAndBytesConfig,
     AutoTokenizer,
+    AutoConfig,
 )
 from trl import SFTTrainer, SFTConfig
 import sys
@@ -17,12 +18,17 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.data_process.cot_loader import load_cot_data, convert_to_dataset_dict
-
 def train_model(config: dict):
+    resume_checkpoint = config['training_params'].get('resume_from_checkpoint')  # 从配置获取checkpoint路径
     model_id = config['model_params']['model_id']
-    print(f"Loading base model: {model_id}")
-    
+
+    if resume_checkpoint and os.path.exists(resume_checkpoint):
+        print(f"Resuming from checkpoint: {resume_checkpoint}")
+        load_path = resume_checkpoint 
+    else:
+        print(f"Loading base model: {model_id}")
+        load_path = model_id  
+
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=config['model_params']['use_4bit'],
         bnb_4bit_quant_type=config['model_params']['bnb_4bit_quant_type'],
@@ -31,24 +37,23 @@ def train_model(config: dict):
     )
 
     model = AutoModelForCausalLM.from_pretrained(
-        model_id,
+        load_path,
         quantization_config=bnb_config,
         device_map=config['device'],
         trust_remote_code=True,
+        # attn_implementation="flash_attention_2"
     )
     
     print(f"Loading data from: {config['data_params']['dataset_path']}")
-    training_strings = load_cot_data(config['data_params']['dataset_path'])
-    negative_strings = load_cot_data(config['data_params']['dataset_path_negative'])
-    all_strings = training_strings + negative_strings
-
-    dataset = Dataset.from_dict(convert_to_dataset_dict(all_strings))
+    dataset_dict = load_dataset("json", data_files=config['data_params']['dataset_path'])
+    dataset = dataset_dict['train']
 
     peft_config = LoraConfig(** config['lora_params'])
 
     training_args = SFTConfig(
         max_length=config['training_params']['max_length'],
-        per_device_train_batch_size=config['training_params']['batch_size']
+        per_device_train_batch_size=config['training_params']['batch_size'],
+        dataset_kwargs={"format": "prompt-completion"},
     )
     
     print("Initializing SFTTrainer...")
@@ -56,11 +61,11 @@ def train_model(config: dict):
         model=model,
         train_dataset=dataset,
         args=training_args,
-        peft_config=peft_config
+        peft_config=peft_config,
     )
     
     print("Starting training...")
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_checkpoint)
     
     final_output_dir = f"{config['training_params']['output_dir']}/final_checkpoint"
     print(f"Training finished. Saving final model to {final_output_dir}...")

@@ -1,160 +1,164 @@
+import random
 import json
-import re
-from typing import List, Dict, Any, Optional
-from dotenv import load_dotenv
+from src.env.othello_game import Othello
+from src.utils.api_client import OpenAIClient
 
-from utils.api_client import OpenAIClient
-from utils.othello_utils import position_to_coord, inside, apply_move, print_board
+def _find_flank_details(game: Othello, pos: str) -> dict:
+    """
+    一个辅助函数，用于找到形成夹击的具体己方和对方棋子。
+    这是对 game._get_flips 的增强，以提供更丰富的推理信息。
+    """
+    row, col = game._parse_coord(pos)
+    if row is None or pos in game.black or pos in game.white:
+        return {}
 
-load_dotenv()  
-
-class CoTGenerator:
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None, model: str = "deepseek-v3"):
-        self.client = OpenAIClient(api_key=api_key, base_url=base_url, model=model)
-        
-    def simulate_board(self, moves_with_players: List[tuple]) -> List[List[int]]:
-        board = [[0]*8 for _ in range(8)]
-        board[3][3], board[3][4] = 2, 1 
-        board[4][3], board[4][4] = 1, 2 
-        for move, player in moves_with_players:
-            apply_move(board, move, player) 
-        return board
+    current, opponent = (game.black, game.white) if game.current_player == 'black' else (game.white, game.black)
+    directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
     
-    def generate_cot_for_move(self, game_data: Dict[str, Any], move_index: int) -> Dict[str, Any]:
-        moves_with_players = game_data.get("moves_with_players", [])
-        if move_index >= len(moves_with_players):
-            return {
-                "move_index": move_index,
-                "position": None,
-                "player": None,
-                "board_state": None,
-                "cot_english": "Invalid move index"
-            }
+    flank_details = {}
+    
+    for dr, dc in directions:
+        line = []
+        r, c = row + dr, col + dc
         
-        current_move, current_player = moves_with_players[move_index]
-        player_str = "Black" if current_player == 1 else "White"
-        move_number = move_index + 1
+        while 0 <= r < game.size and 0 <= c < game.size:
+            current_pos = game._to_coord(r, c)
+            if current_pos in opponent:
+                line.append(current_pos)
+            elif current_pos in current:
+                if line: # Found an anchor piece
+                    flank_details[current_pos] = line # Key: anchor_piece, Value: flipped_pieces
+                break
+            else: # Empty square
+                break
+            r, c = r + dr, c + dc
+            
+    return flank_details
+
+def generate_rule_based_cot(game: Othello) -> dict:
+    """
+    [V3] 为任务一和二生成带有超详细分析的、基于规则的 CoT 数据。
+    """
+    opponent_pieces = game.white if game.current_player == 'black' else game.black
+    all_squares = {game._to_coord(r, c) for r in range(game.size) for c in range(game.size)}
+    occupied_squares = game.black | game.white
+    
+    # --- 任务一：识别和分析候选点 ---
+    plausible_candidates = set()
+    adjacencies = {pos: [] for pos in all_squares}
+
+    for r_idx in range(game.size):
+        for c_idx in range(game.size):
+            pos = game._to_coord(r_idx, c_idx)
+            if pos in occupied_squares: continue
+            
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0: continue
+                    nr, nc = r_idx + dr, c_idx + dc
+                    if 0 <= nr < game.size and 0 <= nc < game.size:
+                        adj_pos = game._to_coord(nr, nc)
+                        if adj_pos in opponent_pieces:
+                            plausible_candidates.add(pos)
+                            adjacencies[pos].append(adj_pos)
+
+    # 条件性负采样
+    analysis_points = set(plausible_candidates)
+    while len(analysis_points) <= 10:
+        if len(all_squares-analysis_points-occupied_squares) != 0:
+            selected_group = random.choice([list(all_squares-analysis_points-occupied_squares), list(occupied_squares)])
+        else:
+            selected_group = list(occupied_squares)
+        analysis_points.add(random.choice(selected_group))
+
+    task1_analysis = {}
+    analysis_points = list(analysis_points)
+    random.shuffle(analysis_points)
+    for pos in analysis_points:
+        if pos in occupied_squares:
+            reason = f"Illegal: Position is already occupied by a {'black' if pos in game.black else 'white'} piece."
+        elif pos not in plausible_candidates:
+            reason = "Invalid Candidate: Position is empty but not adjacent to any opponent pieces."
+        else:
+            reason = f"Plausible Candidate: Position is empty and adjacent to opponent piece(s) at {', '.join(sorted(adjacencies[pos]))}. Legality needs to be checked."
+    
+        task1_analysis[pos] = reason
+
+    task1_cot = {
+        "analysis": task1_analysis,
+        "final_plausible_candidates": sorted(list(plausible_candidates))
+    }
+
+    # --- 任务二：在合理的候选点中分析出合法落子 ---
+    if len(plausible_candidates) > 10:
+        plausible_candidates = set(random.sample(list(plausible_candidates), 10))
+    task2_analysis_details = []
+    final_legal_moves = []
+    for pos in sorted(list(plausible_candidates)):
+        analysis_detail = {"position": pos}
+        flank_details = _find_flank_details(game, pos)
         
-        previous_moves = moves_with_players[:move_index]
-        board = self.simulate_board(previous_moves)
-        
-        def board_to_string(b):
-            symbols = {0: ".", 1: "B", 2: "W"}
-            return "\n".join([" ".join(symbols[cell] for cell in row) for row in b])
-        
-        board_str = board_to_string(board)
-        
-        recent_moves = previous_moves[-5:]  
-        moves_summary = "\n".join([
-            f"Move {i+1 + (move_index - len(recent_moves))}: {move} by {'Black' if p == 1 else 'White'}"
-            for i, (move, p) in enumerate(recent_moves)
-        ])
-        
-        prompt = f"""
-        # Role
-        You are a world-class Othello grandmaster with a steady playing style. You prioritize long-term positioning and restricting the opponent over greedily capturing a large number of discs in the short term.
+        if flank_details:
+            final_legal_moves.append(pos)
+            reason_parts = []
+            for anchor, flipped in flank_details.items():
+                reason_parts.append(f"flanks {', '.join(sorted(flipped))} (in {game.current_opponent} pieces) with anchor piece at {anchor} (in {game.current_player} pieces)")
+            analysis_detail["reasoning"] = f"Adjacent to opponent piece(s) at {', '.join(sorted(adjacencies[pos]))}. It " + "; ".join(reason_parts) + "."
+            analysis_detail["is_legal"] = True
+            analysis_detail["flipped_stones"] = sorted([stone for stones in flank_details.values() for stone in stones])
+        else:
+            analysis_detail["reasoning"] = f"Adjacent to opponent piece(s) at {', '.join(sorted(adjacencies[pos]))}, it fails to form a valid flank in any direction."
+            analysis_detail["is_legal"] = False
+            analysis_detail["flipped_stones"] = []
+        task2_analysis_details.append(analysis_detail)
 
-        # Task
-        Your task is to provide a professional, structured thought process analysis for the specified move in the following Othello game.
+    # 验证生成结果的正确性
+    ground_truth_legal_moves = game.get_valid_moves()
+    assert set(final_legal_moves).issubset(set(ground_truth_legal_moves)), \
+        f"Mismatch! Generated: {sorted(final_legal_moves)}, Ground Truth: {sorted(ground_truth_legal_moves)}"
 
-        ---
+    task2_cot = {
+        "detailed_analysis": task2_analysis_details,
+        "final_legal_moves": sorted(final_legal_moves)
+    }
 
-        # Game Information
-        - **Current Player (You)**: {player_str}
-        - **Move Position**: {current_move}
-        - **Move Number**: {move_number}
-        - **Current Board State** (B=Black, W=White, .=Empty):
-        {board_str}
-        - **Recent Moves**:
-        {moves_summary if moves_summary else "None"}
+    return {"task1_cot": task1_cot, "task2_cot": task2_cot}
 
-        ---
 
-        # Task Requirements
-        Please thoroughly analyze why `{current_move}` is a wise choice, and provide your thought process in strict accordance with the JSON format defined below. **Do not output any additional explanations, comments, or opening remarks—only the JSON object itself**.
+def generate_strategic_cot_task3(game: Othello, legal_moves: list, ground_truth_move: str, api_client: OpenAIClient) -> dict:
+    prompt = f"""You are a world-class Othello grandmaster. Your task is to analyze the board state and a list of legal moves, then explain why the given expert's choice is strategically superior.
 
-        # Output Format (JSON)
-        ```json
-        {{
-        "analysis": {{
-            "board_assessment": {{
-            "strategic_overview": "A macro assessment of the current situation, e.g., which player has the advantage, whether the game is in the opening/midgame/endgame, and the main strategic focus.",
-            "key_positions": "Identify the control status of key positions on the board, especially the stability of the four **corners** and **edges**.",
-            "mobility": "Analyze and compare the **mobility** of both players (i.e., the number of legal moves available) and assess which player will take the initiative in the next few moves."
-            }},
-            "move_justification": {{
-            "position": "{current_move}",
-            "flipped_discs_count": "The number of discs flipped by this move.",
-            "strategic_value": [
-                "Explain the core strategic value of this move (this is an array, which can contain multiple items). E.g.: Whether it occupies favorable terrain (such as central positions), builds a solid edge, gains potential control over opposite corners, or effectively **restricts the opponent's mobility**."
-            ]
-            }},
-            "alternatives_considered": [
-            {{
-                "position": "Another position you considered, e.g., 'C3'",
-                "reason_for_rejection": "Briefly explain why you ultimately abandoned this position. E.g.: 'Although it captures more discs, it would prematurely give up a corner, allowing the opponent to gain a large number of stable discs' or 'This position would severely reduce our mobility'."
-            }},
-            ],
-            "opponent_response_prediction": {{
-            "most_likely_moves": [
-                {{
-                "position": "The position you predict the opponent is most likely to respond with",
-                "reasoning": "Explain why you think the opponent will make this move, e.g.: 'This is the opponent's only available move' or 'This move can maximize the recapture of edge control'."
-                }}
-            ],
-            "long_term_outlook": "A brief outlook on the future direction of the game after the opponent responds."
-            }}
-        }}
-        }}
-        """
-        
-        try:
-            cot = self.client.generate_response(
-                prompt=prompt,
-                temperature=0.7,
-                max_tokens=2048
-            )
-            cleaned_cot = re.sub(r'^\s*```json\s*', '', cot, flags=re.MULTILINE)
-            cleaned_cot = re.sub(r'\s*```\s*$', '', cleaned_cot, flags=re.MULTILINE)
-            cleaned_cot = re.sub(r'\n+', '\n', cleaned_cot).strip()
-            json.loads(cleaned_cot)  
-            return {
-                "move_index": move_index,
-                "position": current_move,
-                "player": current_player,
-                "board_state": board_str,
-                "cot_english": cleaned_cot, 
-                "cot_format": "valid_json"
-            }
-        except json.JSONDecodeError as e:
-            print(f"CoT output is not valid JSON for move {move_number}: {e}")
-            return {
-                "move_index": move_index,
-                "position": current_move,
-                "player": current_player,
-                "board_state": board_str,
-                "cot_english": cot,
-                "cot_format": "invalid_json"
-            }
-        except Exception as e:
-            print(f"Error generating CoT for move {move_number}: {e}")
-            return {
-                "move_index": move_index,
-                "position": current_move,
-                "player": current_player,
-                "board_state": board_str,
-                "cot_english": f"Error: {str(e)}",
-                "cot_format": "error"
-            }
+# Context
+- Player to move: {game.current_player.capitalize()}
+- Board State:
+  - Black Pieces: {sorted(list(game.black))}
+  - White Pieces: {sorted(list(game.white))}
+- All Legal Moves: {legal_moves}
+- The Expert's Choice: {ground_truth_move}
 
-def process_single_game(game_data: Dict[str, Any], max_workers: int = 5) -> Dict[str, Any]:
-    moves_with_players = game_data.get("moves_with_players", [])
-    moves_count = len(moves_with_players)
-    cot_generator = CoTGenerator()
-    cot_list = []
-    for move_idx in range(moves_count):
-        cot_result = cot_generator.generate_cot_for_move(game_data, move_idx)
-        cot_list.append(cot_result)
-    cot_list.sort(key=lambda x: x.get("move_index", 0))
-    game_data["cot_analysis"] = cot_list
-    return game_data
+# Task
+Provide a structured analysis in JSON format explaining why the expert's choice is the best move among all legal options. Focus on long-term strategic concepts like corner acquisition, edge stability, mobility restriction, and parity. Do not just focus on the number of flipped discs.
+
+# JSON Output Format
+{{
+  "strategic_analysis": {{
+    "best_move": "{ground_truth_move}",
+    "core_reasoning": "A concise, high-level explanation of the move's primary strategic advantage.",
+    "comparison_with_alternatives": [
+      {{
+        "alternative_move": "An alternative legal move.",
+        "why_inferior": "Explain why this alternative is strategically weaker than the expert's choice."
+      }}
+    ],
+    "long_term_goal": "What strategic goal does this move achieve for the next 5-10 turns?"
+  }}
+}}
+"""
+    try:
+        response_str = api_client.generate_response(prompt, temperature=0.3)
+        # 清理和解析JSON
+        json_str = response_str[response_str.find('{'):response_str.rfind('}')+1]
+        return json.loads(json_str)
+    except Exception as e:
+        print(f"Failed to generate or parse strategic CoT for move {ground_truth_move}. Error: {e}")
+        return None # 返回None表示失败
