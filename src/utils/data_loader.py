@@ -1,9 +1,10 @@
 import csv
 import re
-from ..env.othello_game import Othello
-from datasets import Dataset, DatasetDict
+
+from datasets import Dataset, DatasetDict, load_dataset
 import json
 from tqdm import tqdm
+from src.env.othello_game import Othello
 
 def load_and_prepare_dataset(jsonl_path, split_ratio=0.9):
     """
@@ -89,3 +90,8 @@ def load_csv(filename, max_games=None):
                 'moves': parse_moves(row['game_moves'])
             })
     return games
+
+if __name__ == '__main__':
+    data_path = '/data/data_public/zjy/Othello-Qwen/data/training_data_tasks_1_2.jsonl'
+    dataset = load_dataset("json", data_files=data_path)['train']
+    print(dataset)

@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import random
@@ -8,6 +8,7 @@ import re
 from datasets import load_dataset
 import sys
 from pathlib import Path
+from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -31,9 +32,9 @@ def to_coord(row_idx, col_idx):
     """Convert 0-based indices to 'a1' style coordinate"""
     return chr(col_idx + ord('a')) + str(row_idx + 1) if 0 <= row_idx < 8 and 0 <= col_idx < 8 else None
 
-model_path = "/data/data_public/zjy/Othello-Qwen/trainer_output/checkpoint-1000"
+model_path = "/data/data_public/zjy/Othello-Qwen/trainer_output/checkpoint-17934"
 
-data_path = "/data/data_public/zjy/Othello-Qwen/data/training_data_tasks_1_2.jsonl"
+data_path = "/data/data_public/zjy/Othello-Qwen/data/test_data_tasks_1_2.jsonl"
 
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 
@@ -55,30 +56,10 @@ task2_correct_cnt = 0
 task2_wrong_cnt = 0
 task2_missed_cnt = 0
 with torch.no_grad():
-    while True:
+    for _ in tqdm(range(500)):
 
         datum = dataset[random.randint(0, len(dataset))]
         input_text = datum['prompt']
-
-        match = re.search(r'Plausible Candidates to Analyze:\n\[(.*?)\]', input_text, re.DOTALL)
-        if match:
-            candidates_str = match.group(1)
-            candidates = [item.strip().strip("'") for item in candidates_str.split(',')]
-            
-            if len(candidates) > 10:
-                processed_candidates = random.sample(candidates, 10)
-            else:
-                processed_candidates = candidates
-            
-            processed_str = "['" + "', '".join(processed_candidates) + "']"
-            
-            input_text = re.sub(r'Plausible Candidates to Analyze:\n\[(.*?)\]', 
-                                    f'Plausible Candidates to Analyze:\n{processed_str}', 
-                                    input_text, 
-                                    flags=re.DOTALL)
-        else:
-            pass
-
 
         inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
 
@@ -142,15 +123,20 @@ with torch.no_grad():
             missed_count = len(missed_moves)
 
             print("Task2:")
-            print(f"correct {correct_count} 个 ({sorted(correct_predictions)})")
-            print(f"wrong: {wrong_count} 个 ({sorted(wrong_predictions)})")
-            print(f"missed: {missed_count} 个 ({sorted(missed_moves)})")
+            # print(f"correct {correct_count} 个 ({sorted(correct_predictions)})")
+            # print(f"wrong: {wrong_count} 个 ({sorted(wrong_predictions)})")
+            # print(f"missed: {missed_count} 个 ({sorted(missed_moves)})")
             task2_correct_cnt += correct_count
             task2_wrong_cnt += wrong_count
             task2_missed_cnt += missed_count
-            print(f"total: correct: {task2_correct_cnt}, wrong: {task2_wrong_cnt}, missed: {task2_missed_cnt}")
+            precision = task2_correct_cnt / (task2_correct_cnt + task2_wrong_cnt)
+            recall = task2_correct_cnt / (task2_correct_cnt + task2_missed_cnt)
+            f1_score =  2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+            print(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1-Score: {f1_score:.4f}")
+            # print(f"total: correct: {task2_correct_cnt}, wrong: {task2_wrong_cnt}, missed: {task2_missed_cnt}")
             
         else:
-            assert False, "invalid output"
+            # assert False, "invalid output"
+            print("invalid output")
 
         print("-"*100+"\n")

@@ -1,5 +1,9 @@
 import random
 import json
+
+import flash_attention
+from numpy import flip
+from peft import TaskType
 from src.env.othello_game import Othello
 from src.utils.api_client import OpenAIClient
 
@@ -20,6 +24,7 @@ def _find_flank_details(game: Othello, pos: str) -> dict:
     for dr, dc in directions:
         line = []
         r, c = row + dr, col + dc
+        adja_pos = game._to_coord(r, c) if game._to_coord(r, c) in opponent else None
         
         while 0 <= r < game.size and 0 <= c < game.size:
             current_pos = game._to_coord(r, c)
@@ -27,11 +32,16 @@ def _find_flank_details(game: Othello, pos: str) -> dict:
                 line.append(current_pos)
             elif current_pos in current:
                 if line: # Found an anchor piece
-                    flank_details[current_pos] = line # Key: anchor_piece, Value: flipped_pieces
+                    flank_details[adja_pos] = (line, current_pos) 
                 break
             else: # Empty square
+                if adja_pos is not None:
+                    flank_details[adja_pos] = ([], current_pos)    
                 break
             r, c = r + dr, c + dc
+        else:
+            if adja_pos is not None:
+                flank_details[adja_pos] = ([], current_pos) 
             
     return flank_details
 
@@ -72,6 +82,8 @@ def generate_rule_based_cot(game: Othello) -> dict:
         analysis_points.add(random.choice(selected_group))
 
     task1_analysis = {}
+    # something wrong???
+    # should be for pos in sort(list(analysis_points)) ???
     analysis_points = list(analysis_points)
     random.shuffle(analysis_points)
     for pos in analysis_points:
@@ -84,42 +96,41 @@ def generate_rule_based_cot(game: Othello) -> dict:
     
         task1_analysis[pos] = reason
 
+    plausible_candidates = sorted(list(plausible_candidates))
     task1_cot = {
         "analysis": task1_analysis,
-        "final_plausible_candidates": sorted(list(plausible_candidates))
+        "final_plausible_candidates": plausible_candidates
     }
 
     # --- 任务二：在合理的候选点中分析出合法落子 ---
     if len(plausible_candidates) > 10:
-        plausible_candidates = set(random.sample(list(plausible_candidates), 10))
-    task2_analysis_details = []
-    final_legal_moves = []
-    for pos in sorted(list(plausible_candidates)):
-        analysis_detail = {"position": pos}
+        plausible_candidates = plausible_candidates[:10]
+    task2_analysis_details = {}
+    final_legal_moves = {}
+    for pos in plausible_candidates:
         flank_details = _find_flank_details(game, pos)
-        
-        if flank_details:
-            final_legal_moves.append(pos)
-            reason_parts = []
-            for anchor, flipped in flank_details.items():
-                reason_parts.append(f"flanks {', '.join(sorted(flipped))} (in {game.current_opponent} pieces) with anchor piece at {anchor} (in {game.current_player} pieces)")
-            analysis_detail["reasoning"] = f"Adjacent to opponent piece(s) at {', '.join(sorted(adjacencies[pos]))}. It " + "; ".join(reason_parts) + "."
-            analysis_detail["is_legal"] = True
-            analysis_detail["flipped_stones"] = sorted([stone for stones in flank_details.values() for stone in stones])
-        else:
-            analysis_detail["reasoning"] = f"Adjacent to opponent piece(s) at {', '.join(sorted(adjacencies[pos]))}, it fails to form a valid flank in any direction."
-            analysis_detail["is_legal"] = False
-            analysis_detail["flipped_stones"] = []
-        task2_analysis_details.append(analysis_detail)
+        flipped_pieces = sum((v[0] for v in flank_details.values()), [])
+        reason = f"Adjacent to opponent piece(s) at {', '.join(sorted(adjacencies[pos]))}."
+        for adaj_pos, flipped_and_anchor in flank_details.items():
+            flipped, anchor = flipped_and_anchor
+            if len(flipped) == 0:
+                reason += f"in the direction of {adaj_pos}, flanks no {game.current_opponent} pieces, "
+            else:
+                reason += f"in the direction of {adaj_pos}, flanks {', '.join(sorted(flipped))} ({game.current_opponent} pieces) with anchor piece at {anchor} ({game.current_player} pieces), "
+        conclusion = f"Position is invalid, flanks no pieces" if len(flipped_pieces) == 0 else \
+                f"Position is valid, flanks {len(flipped_pieces)} {game.current_opponent} pieces: {flipped_pieces}"
+        reason += conclusion
+        task2_analysis_details[pos] = reason
+        if len(flipped_pieces) > 0:
+            final_legal_moves[pos] = flipped_pieces
 
-    # 验证生成结果的正确性
     ground_truth_legal_moves = game.get_valid_moves()
     assert set(final_legal_moves).issubset(set(ground_truth_legal_moves)), \
         f"Mismatch! Generated: {sorted(final_legal_moves)}, Ground Truth: {sorted(ground_truth_legal_moves)}"
 
     task2_cot = {
         "detailed_analysis": task2_analysis_details,
-        "final_legal_moves": sorted(final_legal_moves)
+        "final_legal_moves": final_legal_moves
     }
 
     return {"task1_cot": task1_cot, "task2_cot": task2_cot}

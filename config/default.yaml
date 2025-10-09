@@ -1,5 +1,6 @@
 model_params:
   model_id: "Qwen/Qwen3-4B-Instruct-2507"
+  # model_id: "Qwen/Qwen3-1.7B"
   use_4bit: true
   bnb_4bit_quant_type: "nf4"
   bnb_4bit_compute_dtype: "bfloat16" 
@@ -22,3 +23,4 @@ training_params:
   max_length: 2048
   batch_size: 4
   # resume_from_checkpoint: "./trainer_output/checkpoint-3000"
+  gradient_accumulation_steps: 4

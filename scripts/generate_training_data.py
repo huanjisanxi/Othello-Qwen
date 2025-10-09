@@ -18,9 +18,9 @@ def create_training_data(args):
     [V3] Main orchestrator for generating training data.
     """
     print(f"Loading raw game data from {args.raw_data_path}...")
-    games_data = load_csv(args.raw_data_path, max_games=args.max_games)
+    games_data = load_csv(args.raw_data_path)
+    games_data = random.sample(games_data, args.max_games)
     random.shuffle(games_data)
-    
     
     tasks_to_run = set(args.tasks)
     
@@ -80,7 +80,7 @@ def create_training_data(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Generate CoT training data for Othello.")
     parser.add_argument('--raw_data_path', type=str, default='data/othello_dataset.csv', help='Path to the raw CSV game data.')
-    parser.add_argument('--output_path', type=str, default='data/training_data_tasks_1_2.jsonl', help='Path to save the generated JSONL file.')
+    parser.add_argument('--output_path', type=str, default='data/test_data_tasks_1_2.jsonl', help='Path to save the generated JSONL file.')
     parser.add_argument('--max_games', type=int, default=10, help='Maximum number of games to process from the CSV.')
     parser.add_argument('--tasks', type=str, default='1,2', help='Comma-separated list of tasks to generate data for (e.g., "1,2", "3", "1,2,3").')
     

@@ -1,25 +1,21 @@
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com" 
+# scripts/train_sft_deepspeed.py
 
-import yaml
+import os
 import torch
-from datasets import Dataset, load_dataset
-from peft import LoraConfig
 from transformers import (
-    AutoModelForCausalLM,
-    BitsAndBytesConfig,
+    AutoModelForCausalLM, 
     AutoTokenizer,
-    AutoConfig,
+    BitsAndBytesConfig
 )
 from trl import SFTTrainer, SFTConfig
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent.parent))
+from peft import LoraConfig
+from datasets import load_dataset
+import yaml
 
 def train_model(config: dict):
-    resume_checkpoint = config['training_params'].get('resume_from_checkpoint')  # 从配置获取checkpoint路径
+    # DeepSpeed会自动初始化分布式环境
+    
+    resume_checkpoint = config['training_params'].get('resume_from_checkpoint') 
     model_id = config['model_params']['model_id']
 
     if resume_checkpoint and os.path.exists(resume_checkpoint):
@@ -29,6 +25,7 @@ def train_model(config: dict):
         print(f"Loading base model: {model_id}")
         load_path = model_id  
 
+    # 量化配置
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=config['model_params']['use_4bit'],
         bnb_4bit_quant_type=config['model_params']['bnb_4bit_quant_type'],
@@ -36,42 +33,64 @@ def train_model(config: dict):
         bnb_4bit_use_double_quant=True  
     )
 
+    # 对于DeepSpeed，让DeepSpeed管理设备分配
     model = AutoModelForCausalLM.from_pretrained(
         load_path,
         quantization_config=bnb_config,
-        device_map=config['device'],
+        device_map=None,  # 让DeepSpeed处理设备分配
         trust_remote_code=True,
-        # attn_implementation="flash_attention_2"
+        dtype=torch.bfloat16,
     )
     
-    print(f"Loading data from: {config['data_params']['dataset_path']}")
+    # 加载tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
+    # 加载数据
     dataset_dict = load_dataset("json", data_files=config['data_params']['dataset_path'])
     dataset = dataset_dict['train']
 
-    peft_config = LoraConfig(** config['lora_params'])
+    # LoRA配置
+    peft_config = LoraConfig(**config['lora_params'])
 
+    # 训练参数 - 包含DeepSpeed配置
     training_args = SFTConfig(
         max_length=config['training_params']['max_length'],
         per_device_train_batch_size=config['training_params']['batch_size'],
         dataset_kwargs={"format": "prompt-completion"},
+        # deepspeed="./config/ds_config.json",
+        
+        # # 训练参数
+        # bf16=True,
+        # gradient_checkpointing=True,
+        # logging_steps=10,
+        # save_steps=500,
+        # output_dir=config['training_params']['output_dir'],
+        # learning_rate=config['training_params'].get('learning_rate', 2e-4),
+        # num_train_epochs=config['training_params'].get('num_epochs', 3),
+        # warmup_ratio=0.03,
+        # save_total_limit=3,
+        # dataloader_drop_last=True,
     )
     
-    print("Initializing SFTTrainer...")
+    print("Initializing SFTTrainer with DeepSpeed...")
     trainer = SFTTrainer(
         model=model,
+        tokenizer=tokenizer,
         train_dataset=dataset,
         args=training_args,
         peft_config=peft_config,
     )
     
-    print("Starting training...")
+    print("Starting DeepSpeed training...")
     trainer.train(resume_from_checkpoint=resume_checkpoint)
     
+    # 保存模型
     final_output_dir = f"{config['training_params']['output_dir']}/final_checkpoint"
-    print(f"Training finished. Saving final model to {final_output_dir}...")
+    print(f"Saving final model to {final_output_dir}...")
     trainer.save_model(final_output_dir)
-    print("Done.")
-
+    print("Training completed!")
 
 def main():
     config_path = "config/default.yaml"
@@ -87,7 +106,6 @@ def main():
         return
 
     train_model(config)
-
 
 if __name__ == "__main__":
     main()
