@@ -32,14 +32,15 @@ def to_coord(row_idx, col_idx):
     """Convert 0-based indices to 'a1' style coordinate"""
     return chr(col_idx + ord('a')) + str(row_idx + 1) if 0 <= row_idx < 8 and 0 <= col_idx < 8 else None
 
+model_id = "Qwen/Qwen3-4B-Instruct-2507"
 model_path = "/data/data_public/zjy/Othello-Qwen/trainer_output/checkpoint-17934"
 
 data_path = "/data/data_public/zjy/Othello-Qwen/data/test_data_tasks_1_2.jsonl"
 
-tokenizer = AutoTokenizer.from_pretrained(model_path)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
 
 model = AutoModelForCausalLM.from_pretrained(
-    model_path,
+    model_id,
     trust_remote_code=True,
     device_map="cuda:0" 
 )
@@ -65,7 +66,7 @@ with torch.no_grad():
 
         outputs = model.generate(
             inputs["input_ids"],
-            max_length=2048,
+            max_length=4096,
             temperature=0.7
         )
 
